@@ -19,35 +19,39 @@ class Pocketcasts(object):
         """
         self._username = email
         self._password = password
-
-        self._session = requests.Session()
+        
+        self._authtoken = ""
         self._login()
 
-    def _make_req(self, url, method='GET', data=None):
+    def _make_req(self, url, method='JSON', data=None, alt=False):
         """Makes a HTTP GET/POST request
 
         Args:
             url (str): The URL to make the request to
-            method (str, optional): The method to use. Defaults to 'GET'
+            method (str, optional): The method to use. Defaults to 'JSON'
             data (dict):  data to send with a POST request. Defaults to None.
 
         Returns: 
             requests.response.models.Response: A response object
 
         """
-        if method == 'JSON':
-            req = requests.Request('POST', url, json=data, cookies=self._session.cookies)
-        elif method == 'POST' or data:
-            req = requests.Request('POST', url, data=data, cookies=self._session.cookies)
-        elif method == 'GET':
-            req = requests.Request('GET', url, cookies=self._session.cookies)
+        
+        headers = {'Authorization': 'Bearer ' + self._authtoken}
+        
+        
+        if method == 'GET':
+            req = requests.request('GET', url, headers=headers)
+        elif method == 'JSON':
+            if not type(data) is dict:
+                data = {}
+            data['v'] = 1
+            req = requests.request('POST', url, json=data, headers=headers)
         else:
             raise Exception("Invalid method")
-        prepped = req.prepare()
-        return self._session.send(prepped)
+        return req
 
     def _login(self):
-        """Authenticate using "https://play.pocketcasts.com/users/sign_in"
+        """Authenticate using "https://api.pocketcasts.com/user/login"
 
         Returns:
             bool: True is successful
@@ -57,15 +61,15 @@ class Pocketcasts(object):
 
         :return: 
         """
-        login_url = "https://play.pocketcasts.com/users/sign_in"
-        data = {"[user]email": self._username, "[user]password": self._password}
+        login_url = "https://api.pocketcasts.com/user/login"
+        data = {"email": self._username, "password": self._password}
         attempt = self._make_req(login_url, data=data)
-
-        # TODO Find a more robust way to check if login failed
-        if "Invalid email or password" in attempt.text:
-            raise Exception("Login Failed")
-        else:
+        
+        try:
+            self._authtoken = attempt.json()['token']
             return True
+        except:
+            raise Exception("Login Failed")
 
     def get_top_charts(self):
         """Get the top podcasts
@@ -77,9 +81,9 @@ class Pocketcasts(object):
             Exception: If the top charts cannot be obtained
 
         """
-        page = self._make_req("https://static.pocketcasts.com/discover/json/popular_world.json").json()
+        page = self._make_req("https://lists.pocketcasts.com/popular.json", method="GET").json()
         results = []
-        for podcast in page['result']['podcasts']:
+        for podcast in page['podcasts']:
             uuid = podcast.pop('uuid')
             results.append(Podcast(uuid, self, **podcast))
         return results
@@ -94,9 +98,9 @@ class Pocketcasts(object):
             Exception: If the featured podcasts cannot be obtained
 
         """
-        page = self._make_req("https://static.pocketcasts.com/discover/json/featured.json").json()
+        page = self._make_req("https://lists.pocketcasts.com/featured.json", method="GET").json()
         results = []
-        for podcast in page['result']['podcasts']:
+        for podcast in page['podcasts']:
             uuid = podcast.pop('uuid')
             results.append(Podcast(uuid, self, **podcast))
         return results
@@ -111,9 +115,9 @@ class Pocketcasts(object):
             Exception: If the trending podcasts cannot be obtained
 
         """
-        page = self._make_req("https://static.pocketcasts.com/discover/json/trending.json").json()
+        page = self._make_req("https://lists.pocketcasts.com/trending.json", method="GET").json()
         results = []
-        for podcast in page['result']['podcasts']:
+        for podcast in page['podcasts']:
             uuid = podcast.pop('uuid')
             results.append(Podcast(uuid, self, **podcast))
         return results
@@ -151,10 +155,9 @@ class Pocketcasts(object):
 
         """
         data = {
-            'uuid': pod.uuid,
-            'episode_uuid': e_uuid
+            'uuid': e_uuid
         }
-        attempt = self._make_req('https://play.pocketcasts.com/web/podcasts/podcast.json', data=data).json()['episode']
+        attempt = self._make_req('https://api.pocketcasts.com/user/episode', data=data).json()
         attempt.pop('uuid')
         episode = Episode(e_uuid, pod, **attempt)
         return episode
@@ -169,10 +172,8 @@ class Pocketcasts(object):
             pocketcasts.Podcast: A podcast object corresponding to the UUID provided.
 
         """
-        data = {
-            'uuid': uuid
-        }
-        attempt = self._make_req('https://play.pocketcasts.com/web/podcasts/podcast.json', data=data).json()['podcast']
+        url = 'https://podcast-api.pocketcasts.com/podcast/full/' + uuid + '/0/3/2000'
+        attempt = self._make_req(url, method='GET').json()['podcast']
         attempt.pop('uuid')
         podcast = Podcast(uuid, self, **attempt)
         return podcast
@@ -209,23 +210,12 @@ class Pocketcasts(object):
              ...]
 
         """
-        page = 1
-        more_pages = True
         episodes = []
-        while more_pages:
-            data = {
-                'uuid': pod.uuid,
-                'page': page,
-                'sort': sort
-            }
-            attempt = self._make_req('https://play.pocketcasts.com/web/episodes/find_by_podcast.json', data=data).json()
-            for epi in attempt['result']['episodes']:
-                uuid = epi.pop('uuid')
-                episodes.append(Episode(uuid, podcast=pod, **epi))
-            if attempt['result']['total'] > len(episodes):
-                page += 1
-            else:
-                more_pages = False
+        url = 'https://podcast-api.pocketcasts.com/podcast/full/' + pod.uuid + '/0/3/2000'
+        attempt = self._make_req(url, method='GET').json()['podcast']
+        for epi in attempt['episodes']:
+            uuid = epi.pop('uuid')
+            episodes.append(Episode(uuid, podcast=pod, **epi))
         return episodes
 
     def get_episode_notes(self, episode_uuid):
@@ -238,10 +228,8 @@ class Pocketcasts(object):
             str: The notes for the episode UUID provided
 
         """
-        data = {
-            'uuid': episode_uuid
-        }
-        return self._make_req('https://play.pocketcasts.com/web/episodes/show_notes.json', data=data) \
+        url = 'https://podcast-api.pocketcasts.com/episode/show_notes/' + episode_uuid
+        return self._make_req(url, method='GET') \
             .json()['show_notes']
 
     def get_subscribed_podcasts(self):
@@ -251,7 +239,7 @@ class Pocketcasts(object):
             List[pocketcasts.podcast.Podcast]: A list of podcasts
 
         """
-        attempt = self._make_req('https://play.pocketcasts.com/web/podcasts/all.json', method='POST').json()
+        attempt = self._make_req('https://api.pocketcasts.com/user/podcast/list').json()
         results = []
         for podcast in attempt['podcasts']:
             uuid = podcast.pop('uuid')
@@ -264,11 +252,11 @@ class Pocketcasts(object):
         Returns:
             List[pocketcasts.episode.Episode]: A list of episodes
         """
-        attempt = self._make_req('https://play.pocketcasts.com/web/episodes/new_releases_episodes.json', method='POST')
+        attempt = self._make_req('https://api.pocketcasts.com/user/new_releases')
         results = []
         podcasts = {}
         for episode in attempt.json()['episodes']:
-            pod_uuid = episode['podcast_uuid']
+            pod_uuid = episode['podcastUuid']
             if pod_uuid not in podcasts:
                 podcasts[pod_uuid] = self.get_podcast(pod_uuid)
             uuid = episode.pop('uuid')
@@ -282,11 +270,11 @@ class Pocketcasts(object):
             List[pocketcasts.episode.Episode]: A list of episodes
 
         """
-        attempt = self._make_req('https://play.pocketcasts.com/web/episodes/in_progress_episodes.json', method='POST')
+        attempt = self._make_req('https://api.pocketcasts.com/user/in_progress')
         results = []
         podcasts = {}
         for episode in attempt.json()['episodes']:
-            pod_uuid = episode['podcast_uuid']
+            pod_uuid = episode['podcastUuid']
             if pod_uuid not in podcasts:
                 podcasts[pod_uuid] = self.get_podcast(pod_uuid)
             uuid = episode.pop('uuid')
@@ -299,11 +287,11 @@ class Pocketcasts(object):
         Returns:
             List[pocketcasts.episode.Episode]: A list of episodes
         """
-        attempt = self._make_req('https://play.pocketcasts.com/web/episodes/starred_episodes.json', method='POST')
+        attempt = self._make_req('https://api.pocketcasts.com/user/starred')
         results = []
         podcasts = {}
         for episode in attempt.json()['episodes']:
-            pod_uuid = episode['podcast_uuid']
+            pod_uuid = episode['podcastUuid']
             if pod_uuid not in podcasts:
                 podcasts[pod_uuid] = self.get_podcast(pod_uuid)
             uuid = episode.pop('uuid')
@@ -319,11 +307,11 @@ class Pocketcasts(object):
             starred (int): 1 for starred, 0 for unstarred 
         """
         data = {
-            'starred': starred,
-            'podcast_uuid': podcast.uuid,
+            'star': starred,
+            'podcast': podcast.uuid,
             'uuid': episode.uuid
         }
-        self._make_req("https://play.pocketcasts.com/web/episodes/update_episode_star.json", data=data)
+        self._make_req("https://api.pocketcasts.com/sync/update_episode_star", data=data)
         # TODO Check if successful or not
 
     def update_playing_status(self, podcast, episode, status=Episode.PlayingStatus.Unplayed):
@@ -338,11 +326,11 @@ class Pocketcasts(object):
         if status not in [0, 2, 3]:
             raise Exception('Invalid status.')
         data = {
-            'playing_status': status,
-            'podcast_uuid': podcast.uuid,
+            'status': status,
+            'podcast': podcast.uuid,
             'uuid': episode.uuid
         }
-        self._make_req("https://play.pocketcasts.com/web/episodes/update_episode_position.json", data=data)
+        self._make_req("https://api.pocketcasts.com/sync/update_episode", data=data)
 
     def update_played_position(self, podcast, episode, position):
         """Update the current play duration of an episode
@@ -360,14 +348,12 @@ class Pocketcasts(object):
 
         """
         data = {
-            'playing_status': episode.playing_status,
-            'podcast_uuid': podcast.uuid,
+            'status': episode.playing_status,
+            'podcast': podcast.uuid,
             'uuid': episode.uuid,
-            'duration': episode.duration,
-            'played_up_to': position
+            'position': position
         }
-        attempt = self._make_req("https://play.pocketcasts.com/web/episodes/update_episode_position.json",
-                                 method='JSON', data=data)
+        attempt = self._make_req("https://api.pocketcasts.com/sync/update_episode", data=data)
         if attempt.json()['status'] != 'ok':
             raise Exception('Sorry your update failed.')
         return True
@@ -381,7 +367,7 @@ class Pocketcasts(object):
         data = {
             'uuid': podcast.uuid
         }
-        self._make_req("https://play.pocketcasts.com/web/podcasts/subscribe.json", data=data)
+        self._make_req("https://api.pocketcasts.com/user/podcast/subscribe", data=data)
 
     def unsubscribe_podcast(self, podcast):
         """Unsubscribe from a podcast
@@ -392,7 +378,7 @@ class Pocketcasts(object):
         data = {
             'uuid': podcast.uuid
         }
-        self._make_req("https://play.pocketcasts.com/web/podcasts/unsubscribe.json", data=data)
+        self._make_req("https://api.pocketcasts.com/user/podcast/unsubscribe", data=data)
 
     def search_podcasts(self, search_str):
         """Search for podcasts
@@ -407,7 +393,7 @@ class Pocketcasts(object):
         data = {
             'term': search_str
         }
-        attempt = self._make_req("https://play.pocketcasts.com/web/podcasts/search.json", data=data)
+        attempt = self._make_req("https://api.pocketcasts.com/discover/search", data=data)
         results = []
         for podcast in attempt.json()['podcasts']:
             uuid = podcast.pop('uuid')

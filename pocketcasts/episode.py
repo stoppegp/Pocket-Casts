@@ -1,4 +1,4 @@
-from datetime import datetime
+import dateutil.parser
 
 class Episode(object):
     """Class for podcast episodes"""
@@ -28,7 +28,7 @@ class Episode(object):
         self._title = kwargs.get('title', '')
         self._url = kwargs.get('url', '')
         self._duration = kwargs.get('duration', '')
-        self._published_at = datetime.strptime(kwargs.get('published_at', ''), '%Y-%m-%d %H:%M:%S')
+        self._published_at = dateutil.parser.isoparse(kwargs.get('published', ''))
         self._starred = bool(kwargs.get('starred', ''))
 
         self._playing_status = kwargs.get('playing_status', Episode.PlayingStatus.Unplayed)
