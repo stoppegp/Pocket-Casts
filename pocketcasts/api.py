@@ -297,6 +297,24 @@ class Pocketcasts(object):
             uuid = episode.pop('uuid')
             results.append(Episode(uuid, podcasts[pod_uuid], **episode))
         return results
+    
+    def get_up_next(self):
+        """Get up next episodes
+
+        Returns:
+            List[pocketcasts.episode.Episode]: A list of episodes
+        """
+        attempt = self._make_req('https://api.pocketcasts.com/up_next/list', data={'version':2})
+        results = []
+        podcasts = {}
+        for episode in attempt.json()['episodes']:
+            pod_uuid = episode['podcast']
+            if pod_uuid not in podcasts:
+                podcasts[pod_uuid] = self.get_podcast(pod_uuid)
+            uuid = episode.pop('uuid')
+            episode.pop('podcast')
+            results.append(Episode(uuid, podcasts[pod_uuid], **episode))
+        return results
 
     def update_starred(self, podcast, episode, starred):
         """Star or unstar an episode
