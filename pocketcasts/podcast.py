@@ -26,9 +26,9 @@ class Podcast(object):
         self._categories = str(kwargs.get('category', '')).split('\n')
 
         self._thumbnail_url_src = kwargs.get('thumbnail_url', '')
-        self._thumbnail_url_small = "http://static.pocketcasts.com/discover/images/130/{}.jpg".format(uuid)
-        self._thumbnail_url_medium = "http://static.pocketcasts.com/discover/images/200/{}.jpg".format(uuid)
-        self._thumbnail_url_large = "http://static.pocketcasts.com/discover/images/280/{}.jpg".format(uuid)
+        self._thumbnail_url_small = "https://static2.pocketcasts.com/discover/images/130/{}.jpg".format(uuid)
+        self._thumbnail_url_medium = "https://static2.pocketcasts.com/discover/images/200/{}.jpg".format(uuid)
+        self._thumbnail_url_large = "https://static2.pocketcasts.com/discover/images/280/{}.jpg".format(uuid)
         self._media_type = kwargs.get('media_type', '')
 
     def __repr__(self):
